@@ -4,147 +4,177 @@ import urllib.parse
 import pandas as pd
 from datetime import datetime
 
-# --- 1. CONFIG & SECRETS ---
-st.set_page_config(page_title="Apni Dukan Manager", page_icon="🍎", layout="wide")
+# --- 1. CONFIG & THEME ---
+# initial_sidebar_state="expanded" ensures the sidebar stays open
+st.set_page_config(
+    page_title="Apni Dukan Manager", 
+    page_icon="🌿", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
 
+# Custom CSS for Colors and Styling
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #f9fbf9;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #2e5a27;
+    }
+    [data-testid="stSidebar"] * {
+        color: white !important;
+    }
+    .st-emotion-cache-10trblm {
+        color: #2e5a27;
+    }
+    h1, h2, h3 {
+        color: #2e5a27 !important;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .stButton>button {
+        background-color: #e67e22 !important;
+        color: white !important;
+        border-radius: 8px;
+        border: none;
+    }
+    </style>
+    """, unsafe_content_factory=True)
+
+# --- 2. DB CONNECTION ---
 URL = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
 KEY = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+db = create_client(URL, KEY)
 
-@st.cache_resource
-def get_db():
-    return create_client(URL, KEY)
+# --- 3. DATA HELPERS ---
+TOWERS = [chr(i) for i in range(ord('A'), ord('M'))]
+FLATS = [f"{floor}{flat:02d}" for floor in range(1, 19) for flat in range(1, 5)]
 
-db = get_db()
+# --- 4. SIDEBAR NAVIGATION ---
+st.sidebar.image("https://img.icons8.com/color/96/shop-local.png")
+st.sidebar.title("Apni Dukan")
+menu = ["📦 Inventory Manager", "📢 Marketing", "📝 Billing", "📊 Daily Reports"]
+choice = st.sidebar.radio("Main Menu", menu)
 
-# --- 2. MASTER DATA ---
-MASTER_PRODUCTS = sorted([
-    "Potato (Aloo)", "Onion (Pyaz)", "Tomato (Tamatar)", "Ginger (Adrak)", "Garlic (Lahsun)",
-    "Green Chilli", "Lemon", "Coriander", "Mint (Pudina)", "Spinach (Palak)", 
-    "Cauliflower", "Cabbage", "Lady Finger (Bhindi)", "Brinjal (Long)", "Brinjal (Round)",
-    "Bottle Gourd (Lauki)", "Bitter Gourd (Karela)", "Ridge Gourd (Tori)", "Pumpkin",
-    "Capsicum (Green)", "Carrot", "Radish (Mooli)", "Cucumber", "French Beans", 
-    "Green Peas (Matar)", "Broccoli", "Mushroom", "Sweet Potato", "Beetroot", 
-    "Apple (Shimla)", "Banana (Kela)", "Papaya", "Pomegranate (Anar)", "Guava", 
-    "Orange", "Grapes (Green)", "Watermelon", "Mango (Safeda)", "Pineapple", "Chickoo"
-])
-
-TOWERS = [chr(i) for i in range(ord('A'), ord('M'))] # Generates A to L
-
-# Logic for Flat Numbers: 18 floors, 4 flats per floor (e.g., 101, 102, 103, 104 ... 1804)
-FLATS = []
-for floor in range(1, 19):
-    for flat in range(1, 5):
-        FLATS.append(f"{floor}{flat:02d}")
-
-# --- 3. UI ---
-st.title("🏪 Apni Dukan")
-menu = ["Billing", "Marketing & WhatsApp", "Inventory Manager", "Daily Reports"]
-choice = st.sidebar.selectbox("Navigation", menu)
-
-# --- SECTION: BILLING ---
-if choice == "Billing":
-    st.header("📝 Create New Bill")
-    res = db.table("inventory").select("*").execute()
+# --- SECTION 1: INVENTORY MANAGER ---
+if choice == "📦 Inventory Manager":
+    st.header("📦 Inventory & Price Management")
     
+    # NEW: Add custom items to the Master List
+    with st.expander("⚙️ Master List Settings (Add new items to dropdown)"):
+        new_master_item = st.text_input("New Item Name (e.g. Avocado)")
+        if st.button("Add to Dropdown List"):
+            if new_master_item:
+                # We store master items in a separate table for persistence
+                db.table("master_list").upsert({"name": new_master_item}).execute()
+                st.success(f"{new_master_item} added to Master List!")
+                st.rerun()
+
+    # Load items from Master List table
+    master_res = db.table("master_list").select("*").execute()
+    master_list = sorted([item['name'] for item in master_res.data]) if master_res.data else ["Potato (Aloo)", "Onion (Pyaz)"]
+
+    with st.container(border=True):
+        st.subheader("➕ Update Shop Stock")
+        with st.form("add_form", clear_on_submit=True):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                p_name = st.selectbox("Select Product", master_list)
+            with col2:
+                c_price = st.number_input("Cost (Buy)", min_value=0.0)
+            with col3:
+                s_price = st.number_input("Sale (Sell)", min_value=0.0)
+            
+            is_flash = st.checkbox("Mark for Flash Sale")
+            if st.form_submit_button("Update Inventory"):
+                db.table("inventory").upsert({
+                    "name": p_name, "cost_price": c_price, 
+                    "sale_price": s_price, "is_flash_sale": is_flash
+                }).execute()
+                st.success(f"{p_name} updated!")
+                st.rerun()
+
+    # Table View
+    st.subheader("📋 Current Prices")
+    res = db.table("inventory").select("*").execute()
+    if res.data:
+        df = pd.DataFrame(res.data)
+        st.data_editor(df, num_rows="dynamic", key="inv_edit", hide_index=True)
+
+# --- SECTION 2: MARKETING ---
+elif choice == "📢 Marketing":
+    st.header("📢 WhatsApp Marketing")
+    res = db.table("inventory").select("*").execute()
+    if res.data:
+        df = pd.DataFrame(res.data)
+        
+        tab1, tab2 = st.tabs(["Daily Price List", "Flash Sale"])
+        
+        with tab1:
+            st.write("Generate a full price list for your society group.")
+            if st.button("Generate Daily List"):
+                msg = f"*🏪 Apni Dukan - Fresh Arrivals ({datetime.now().strftime('%d %b')})*\n\n"
+                for _, row in df.sort_values("name").iterrows():
+                    msg += f"• {row['name']}: *₹{row['sale_price']}*\n"
+                msg += "\n📍 Home Delivery Available!\n📞 Order Now!"
+                st.link_button("🚀 Share to Group", f"https://wa.me/?text={urllib.parse.quote(msg)}")
+        
+        with tab2:
+            flash_df = df[df["is_flash_sale"] == True]
+            if not flash_df.empty:
+                if st.button("Generate Flash Sale Blast"):
+                    msg = "⚡ *FLASH SALE - APNI DUKAN* ⚡\n\n"
+                    for _, row in flash_df.iterrows():
+                        msg += f"🔥 *{row['name']}* @ *₹{row['sale_price']}* only!\n"
+                    msg += "\n⏳ Valid for 2 hours!"
+                    st.link_button("🚀 Send Flash Blast", f"https://wa.me/?text={urllib.parse.quote(msg)}")
+            else:
+                st.info("No items marked for Flash Sale in Inventory.")
+
+# --- SECTION 3: BILLING ---
+elif choice == "📝 Billing":
+    st.header("📝 New Bill")
+    res = db.table("inventory").select("*").execute()
     if res.data:
         df_inv = pd.DataFrame(res.data)
         with st.form("bill_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                c_name = st.text_input("Customer Name")
-                tower_choice = st.selectbox("Select Tower", TOWERS)
-                flat_choice = st.selectbox("Select Flat No", FLATS)
-            with col2:
-                item_choice = st.selectbox("Select Item", df_inv["name"].tolist())
+            c_name = st.text_input("Customer Name")
+            c1, c2 = st.columns(2)
+            with c1:
+                tower = st.selectbox("Tower", TOWERS)
+                flat = st.selectbox("Flat No", FLATS)
+            with c2:
+                item = st.selectbox("Item", df_inv["name"].tolist())
+                unit = st.selectbox("Unit", ["kg", "gms", "Dozen", "Piece"])
                 qty = st.number_input("Quantity", min_value=0.1, step=0.1)
             
-            if st.form_submit_button("Generate & Save Bill"):
-                full_address = f"Tower {tower_choice} - {flat_choice}"
-                item_row = df_inv[df_inv["name"] == item_choice].iloc[0]
-                total = item_row["sale_price"] * qty
-                profit = (item_row["sale_price"] - item_row["cost_price"]) * qty
+            if st.form_submit_button("Generate & Share"):
+                item_row = df_inv[df_inv["name"] == item].iloc[0]
+                # Adjust total if unit is gms
+                calc_qty = qty/1000 if unit == "gms" else qty
+                total = item_row["sale_price"] * calc_qty
+                profit = (item_row["sale_price"] - item_row["cost_price"]) * calc_qty
                 
-                # Save to Database
                 db.table("sales").insert({
-                    "item_name": item_choice, "qty": qty, 
-                    "total_bill": total, "profit": profit, "tower_flat": full_address
+                    "item_name": item, "qty": f"{qty} {unit}", 
+                    "total_bill": round(total, 2), "profit": round(profit, 2), 
+                    "tower_flat": f"Tower {tower}-{flat}"
                 }).execute()
                 
-                # WhatsApp Message
-                msg = f"*Apni Dukan Receipt*\n------------------\n*Customer:* {c_name}\n*Flat:* {full_address}\n*Item:* {item_choice}\n*Qty:* {qty}\n*Total: ₹{total}*\n------------------\nThank you!"
-                st.success(f"Bill Saved for {full_address}")
+                msg = f"*Apni Dukan Receipt*\n*Cust:* {c_name}\n*Loc:* Tower {tower}-{flat}\n*Item:* {item} ({qty} {unit})\n*Total: ₹{round(total, 2)}*"
                 st.link_button("📲 Share on WhatsApp", f"https://wa.me/?text={urllib.parse.quote(msg)}")
     else:
-        st.warning("No items in shop! Add them in Inventory Manager.")
+        st.error("Inventory empty!")
 
-# --- SECTION: MARKETING ---
-elif choice == "Marketing & WhatsApp":
-    st.header("📢 Group Announcements")
-    res = db.table("inventory").select("*").execute()
-    if res.data:
-        df = pd.DataFrame(res.data)
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📝 Create Daily Price List"):
-                today = datetime.now().strftime("%d %b")
-                msg = f"*🏪 Apni Dukan - Fresh Arrivals ({today})*\n\n"
-                for _, row in df.sort_values("name").iterrows():
-                    msg += f"• {row['name']}: *₹{row['sale_price']}*\n"
-                msg += "\n📞 Order now for home delivery!"
-                st.link_button("🚀 Share to Group", f"https://wa.me/?text={urllib.parse.quote(msg)}")
-        with col2:
-            flash_df = df[df["is_flash_sale"] == True]
-            if not flash_df.empty:
-                if st.button("🔥 Create Flash Sale"):
-                    msg = "⚡ *FLASH SALE - APNI DUKAN* ⚡\n\n"
-                    for _, row in flash_df.iterrows():
-                        msg += f"🔥 *{row['name']}* at only *₹{row['sale_price']}* !!\n"
-                    msg += "\n⏳ Limited time offer!"
-                    st.link_button("🚀 Blast to Group", f"https://wa.me/?text={urllib.parse.quote(msg)}")
-            else:
-                st.write("Mark items as 'Flash Sale' in Inventory first.")
-
-# --- SECTION: INVENTORY ---
-elif choice == "Inventory Manager":
-    st.header("📦 Manage Stock")
-    with st.expander("➕ Add New Item to Shop"):
-        with st.form("add_form", clear_on_submit=True):
-            p_name = st.selectbox("Select Product", MASTER_PRODUCTS)
-            c_price = st.number_input("Cost Price (Buy)", min_value=0.0)
-            s_price = st.number_input("Sale Price (Sell)", min_value=0.0)
-            is_flash = st.checkbox("Mark as Flash Sale?")
-            if st.form_submit_button("Add to Shop"):
-                db.table("inventory").upsert({
-                    "name": p_name, "cost_price": c_price, "sale_price": s_price, "is_flash_sale": is_flash
-                }).execute()
-                st.success(f"Added/Updated {p_name}")
-                st.rerun()
-
-    res = db.table("inventory").select("*").execute()
-    if res.data:
-        df = pd.DataFrame(res.data)
-        st.subheader("Current Price List")
-        edited = st.data_editor(df, num_rows="dynamic", key="inv_edit", hide_index=True)
-        if st.button("💾 Save Changes"):
-            for _, row in edited.iterrows():
-                db.table("inventory").upsert({
-                    "id": row["id"], "name": row["name"], 
-                    "cost_price": row["cost_price"], "sale_price": row["sale_price"],
-                    "is_flash_sale": row["is_flash_sale"]
-                }).execute()
-            st.success("Cloud Updated!")
-
-# --- SECTION: REPORTS ---
-elif choice == "Daily Reports":
-    st.header("📊 Business Analytics")
+# --- SECTION 4: REPORTS ---
+elif choice == "📊 Daily Reports":
+    st.header("📊 Business Insights")
     res = db.table("sales").select("*").execute()
     if res.data:
         sdf = pd.DataFrame(res.data)
-        col1, col2 = st.columns(2)
-        col1.metric("Total Sales", f"₹{sdf['total_bill'].sum()}")
-        col2.metric("Total Profit", f"₹{sdf['profit'].sum()}")
-        
-        st.subheader("Sale History")
-        st.dataframe(sdf[["created_at", "item_name", "qty", "total_bill", "tower_flat"]], use_container_width=True)
+        c1, c2 = st.columns(2)
+        c1.metric("Revenue", f"₹{sdf['total_bill'].sum():.2f}")
+        c2.metric("Profit", f"₹{sdf['profit'].sum():.2f}")
+        st.dataframe(sdf, use_container_width=True)
     else:
-        st.info("No sales recorded today.")
+        st.info("No sales data yet.")
