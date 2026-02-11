@@ -9,18 +9,26 @@ st.set_page_config(
     page_title="Apni Dukan", 
     page_icon="🌿", 
     layout="wide", 
-    initial_sidebar_state="collapsed" # Starts closed on mobile
+    initial_sidebar_state="collapsed" 
 )
 
-# Custom CSS to ensure mobile labels are clear and buttons are big
 st.markdown("""
     <style>
     .stApp { background-color: #f9fbf9; }
-    [data-testid="stSidebar"] { background-color: #2e5a27 !important; min-width: 250px !important; }
-    [data-testid="stSidebar"] * { color: white !important; }
-    .stButton>button { width: 100%; height: 50px; font-weight: bold; margin-bottom: 10px; }
-    /* This style helps hidden labels show up on dark backgrounds */
-    .stSelectbox label, .stTextInput label { color: #2e5a27 !important; font-size: 1rem !important; }
+    [data-testid="stSidebar"] { background-color: #2e5a27 !important; }
+    .main-btn {
+        background-color: #e67e22 !important;
+        color: white !important;
+        padding: 20px;
+        text-align: center;
+        border-radius: 10px;
+        margin: 10px 0px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+    h1, h2 { color: #2e5a27 !important; text-align: center; }
+    /* Force focus to main area */
+    section[data-testid="stSidebar"] { width: 0px; } 
     </style>
     """, unsafe_allow_html=True)
 
@@ -33,36 +41,42 @@ db = create_client(URL, KEY)
 TOWERS = [chr(i) for i in range(ord('A'), ord('M'))]
 FLATS = [f"{floor}{flat:02d}" for floor in range(1, 19) for flat in range(1, 5)]
 
-# --- 4. SMART SIDEBAR NAVIGATION ---
-# Using Session State to track the page
+# --- 4. NAVIGATION LOGIC ---
 if 'page' not in st.session_state:
-    st.session_state.page = "📦 Inventory Manager"
+    st.session_state.page = "🏠 Home"
 
-st.sidebar.title("🌿 Apni Dukan")
-st.sidebar.write("Select a section:")
-
-# Functional Menu Buttons (Better for mobile triggers)
-if st.sidebar.button("📦 Inventory Manager"):
-    st.session_state.page = "📦 Inventory Manager"
+# Persistent Home Button in Sidebar
+if st.sidebar.button("🏠 Back to Home"):
+    st.session_state.page = "🏠 Home"
     st.rerun()
 
-if st.sidebar.button("📢 Marketing"):
-    st.session_state.page = "📢 Marketing"
-    st.rerun()
-
-if st.sidebar.button("📝 Billing"):
-    st.session_state.page = "📝 Billing"
-    st.rerun()
-
-if st.sidebar.button("📊 Daily Reports"):
-    st.session_state.page = "📊 Daily Reports"
-    st.rerun()
-
-choice = st.session_state.page
+# --- SECTION: HOME DASHBOARD ---
+if st.session_state.page == "🏠 Home":
+    st.title("🌿 Apni Dukan")
+    st.subheader("Select a Task")
+    
+    col1, col2 = st.columns(2)
+    
+    if col1.button("📦 Inventory Manager", use_container_width=True):
+        st.session_state.page = "📦 Inventory Manager"
+        st.rerun()
+        
+    if col2.button("📢 Marketing", use_container_width=True):
+        st.session_state.page = "📢 Marketing"
+        st.rerun()
+        
+    if col1.button("📝 Billing", use_container_width=True):
+        st.session_state.page = "📝 Billing"
+        st.rerun()
+        
+    if col2.button("📊 Daily Reports", use_container_width=True):
+        st.session_state.page = "📊 Daily Reports"
+        st.rerun()
 
 # --- SECTION 1: INVENTORY MANAGER ---
-if choice == "📦 Inventory Manager":
+elif st.session_state.page == "📦 Inventory Manager":
     st.header("📦 Inventory Manager")
+    if st.button("⬅️ Back"): st.session_state.page = "🏠 Home"; st.rerun()
     
     with st.expander("⚙️ Master List Settings"):
         new_master_item = st.text_input("New Item Name")
@@ -79,7 +93,6 @@ if choice == "📦 Inventory Manager":
         master_options = ["Potato"]
 
     with st.form("add_form", clear_on_submit=True):
-        st.subheader("Update Stock")
         p_name = st.selectbox("Product", master_options)
         c_price = st.number_input("Cost/kg", min_value=0.0)
         s_price = st.number_input("Sale/kg", min_value=0.0)
@@ -88,13 +101,11 @@ if choice == "📦 Inventory Manager":
             db.table("inventory").upsert({"name": p_name, "cost_price": c_price, "sale_price": s_price, "is_flash_sale": is_flash}).execute()
             st.success("Updated!")
 
-    res = db.table("inventory").select("*").execute()
-    if res.data:
-        st.dataframe(pd.DataFrame(res.data), hide_index=True)
-
 # --- SECTION 2: MARKETING ---
-elif choice == "📢 Marketing":
+elif st.session_state.page == "📢 Marketing":
     st.header("📢 Marketing")
+    if st.button("⬅️ Back"): st.session_state.page = "🏠 Home"; st.rerun()
+    
     res = db.table("inventory").select("*").execute()
     if res.data:
         df = pd.DataFrame(res.data)
@@ -116,8 +127,10 @@ elif choice == "📢 Marketing":
                     st.link_button("🚀 Send Flash Blast", f"https://wa.me/?text={urllib.parse.quote(msg)}")
 
 # --- SECTION 3: BILLING ---
-elif choice == "📝 Billing":
+elif st.session_state.page == "📝 Billing":
     st.header("📝 New Bill")
+    if st.button("⬅️ Back"): st.session_state.page = "🏠 Home"; st.rerun()
+    
     res = db.table("inventory").select("*").execute()
     if res.data:
         df_inv = pd.DataFrame(res.data)
@@ -141,8 +154,10 @@ elif choice == "📝 Billing":
                 st.link_button("📲 Share Bill", f"https://wa.me/?text={urllib.parse.quote(msg)}")
 
 # --- SECTION 4: REPORTS ---
-elif choice == "📊 Daily Reports":
+elif st.session_state.page == "📊 Daily Reports":
     st.header("📊 Daily Reports")
+    if st.button("⬅️ Back"): st.session_state.page = "🏠 Home"; st.rerun()
+    
     res = db.table("sales").select("*").execute()
     if res.data:
         sdf = pd.DataFrame(res.data)
