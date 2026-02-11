@@ -61,8 +61,13 @@ if choice == "📦 Inventory Manager":
                 st.success(f"{new_master_item} added!")
                 st.rerun()
 
+# --- Updated Master List Fetching with Safety Catch ---
+try:
     master_res = db.table("master_list").select("*").execute()
     master_options = sorted([item['name'] for item in master_res.data]) if master_res.data else ["Potato (Aloo)"]
+except Exception as e:
+    st.error("⚠️ Master List not found in Database. Please run the SQL script in Supabase.")
+    master_options = ["Potato (Aloo)", "Onion (Pyaz)", "Tomato (Tamatar)"] # Fallback options
 
     with st.container(border=True):
         st.subheader("➕ Update Shop Stock")
