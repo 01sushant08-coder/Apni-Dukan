@@ -16,7 +16,7 @@ def get_db():
 
 db = get_db()
 
-# --- 2. MASTER PRODUCT LIST ---
+# --- 2. MASTER DATA ---
 MASTER_PRODUCTS = sorted([
     "Potato (Aloo)", "Onion (Pyaz)", "Tomato (Tamatar)", "Ginger (Adrak)", "Garlic (Lahsun)",
     "Green Chilli", "Lemon", "Coriander", "Mint (Pudina)", "Spinach (Palak)", 
@@ -28,6 +28,14 @@ MASTER_PRODUCTS = sorted([
     "Orange", "Grapes (Green)", "Watermelon", "Mango (Safeda)", "Pineapple", "Chickoo"
 ])
 
+TOWERS = [chr(i) for i in range(ord('A'), ord('M'))] # Generates A to L
+
+# Logic for Flat Numbers: 18 floors, 4 flats per floor (e.g., 101, 102, 103, 104 ... 1804)
+FLATS = []
+for floor in range(1, 19):
+    for flat in range(1, 5):
+        FLATS.append(f"{floor}{flat:02d}")
+
 # --- 3. UI ---
 st.title("🏪 Apni Dukan")
 menu = ["Billing", "Marketing & WhatsApp", "Inventory Manager", "Daily Reports"]
@@ -37,29 +45,34 @@ choice = st.sidebar.selectbox("Navigation", menu)
 if choice == "Billing":
     st.header("📝 Create New Bill")
     res = db.table("inventory").select("*").execute()
+    
     if res.data:
         df_inv = pd.DataFrame(res.data)
         with st.form("bill_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
                 c_name = st.text_input("Customer Name")
-                flat = st.text_input("Tower/Flat No")
+                tower_choice = st.selectbox("Select Tower", TOWERS)
+                flat_choice = st.selectbox("Select Flat No", FLATS)
             with col2:
                 item_choice = st.selectbox("Select Item", df_inv["name"].tolist())
                 qty = st.number_input("Quantity", min_value=0.1, step=0.1)
             
             if st.form_submit_button("Generate & Save Bill"):
+                full_address = f"Tower {tower_choice} - {flat_choice}"
                 item_row = df_inv[df_inv["name"] == item_choice].iloc[0]
                 total = item_row["sale_price"] * qty
                 profit = (item_row["sale_price"] - item_row["cost_price"]) * qty
                 
+                # Save to Database
                 db.table("sales").insert({
                     "item_name": item_choice, "qty": qty, 
-                    "total_bill": total, "profit": profit, "tower_flat": flat
+                    "total_bill": total, "profit": profit, "tower_flat": full_address
                 }).execute()
                 
-                msg = f"*Apni Dukan Receipt*\n------------------\n*Customer:* {c_name}\n*Flat:* {flat}\n*Item:* {item_choice}\n*Qty:* {qty}\n*Total: ₹{total}*\n------------------\nThank you!"
-                st.success(f"Bill Saved: ₹{total}")
+                # WhatsApp Message
+                msg = f"*Apni Dukan Receipt*\n------------------\n*Customer:* {c_name}\n*Flat:* {full_address}\n*Item:* {item_choice}\n*Qty:* {qty}\n*Total: ₹{total}*\n------------------\nThank you!"
+                st.success(f"Bill Saved for {full_address}")
                 st.link_button("📲 Share on WhatsApp", f"https://wa.me/?text={urllib.parse.quote(msg)}")
     else:
         st.warning("No items in shop! Add them in Inventory Manager.")
