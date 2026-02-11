@@ -4,27 +4,23 @@ import urllib.parse
 import pandas as pd
 from datetime import datetime
 
-# --- 1. CONFIG & THEME ---
-# Changed initial_sidebar_state to "auto" so it collapses on mobile after use
+# --- 1. CONFIG ---
 st.set_page_config(
-    page_title="Apni Dukan Manager", 
+    page_title="Apni Dukan", 
     page_icon="🌿", 
     layout="wide", 
-    initial_sidebar_state="auto" 
+    initial_sidebar_state="collapsed" # Starts closed on mobile
 )
 
+# Custom CSS to ensure mobile labels are clear and buttons are big
 st.markdown("""
     <style>
     .stApp { background-color: #f9fbf9; }
-    [data-testid="stSidebar"] { background-color: #2e5a27 !important; }
+    [data-testid="stSidebar"] { background-color: #2e5a27 !important; min-width: 250px !important; }
     [data-testid="stSidebar"] * { color: white !important; }
-    h1, h2, h3 { color: #2e5a27 !important; font-size: 1.5rem !important; }
-    .stButton>button { background-color: #e67e22 !important; color: white !important; border-radius: 8px; width: 100%; }
-    /* Fix for mobile labels */
-    .stSelectbox label, .stTextInput label, .stNumberInput label {
-        font-weight: bold !important;
-        color: #2e5a27 !important;
-    }
+    .stButton>button { width: 100%; height: 50px; font-weight: bold; margin-bottom: 10px; }
+    /* This style helps hidden labels show up on dark backgrounds */
+    .stSelectbox label, .stTextInput label { color: #2e5a27 !important; font-size: 1rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -37,18 +33,40 @@ db = create_client(URL, KEY)
 TOWERS = [chr(i) for i in range(ord('A'), ord('M'))]
 FLATS = [f"{floor}{flat:02d}" for floor in range(1, 19) for flat in range(1, 5)]
 
-# --- 4. SIDEBAR ---
+# --- 4. SMART SIDEBAR NAVIGATION ---
+# Using Session State to track the page
+if 'page' not in st.session_state:
+    st.session_state.page = "📦 Inventory Manager"
+
 st.sidebar.title("🌿 Apni Dukan")
-menu = ["📦 Inventory Manager", "📢 Marketing", "📝 Billing", "📊 Daily Reports"]
-choice = st.sidebar.radio("Main Menu", menu)
+st.sidebar.write("Select a section:")
+
+# Functional Menu Buttons (Better for mobile triggers)
+if st.sidebar.button("📦 Inventory Manager"):
+    st.session_state.page = "📦 Inventory Manager"
+    st.rerun()
+
+if st.sidebar.button("📢 Marketing"):
+    st.session_state.page = "📢 Marketing"
+    st.rerun()
+
+if st.sidebar.button("📝 Billing"):
+    st.session_state.page = "📝 Billing"
+    st.rerun()
+
+if st.sidebar.button("📊 Daily Reports"):
+    st.session_state.page = "📊 Daily Reports"
+    st.rerun()
+
+choice = st.session_state.page
 
 # --- SECTION 1: INVENTORY MANAGER ---
 if choice == "📦 Inventory Manager":
-    st.header("📦 Inventory Management")
+    st.header("📦 Inventory Manager")
     
-    with st.expander("⚙️ Add New Item to Master Dropdown"):
+    with st.expander("⚙️ Master List Settings"):
         new_master_item = st.text_input("New Item Name")
-        if st.button("Add to Master List"):
+        if st.button("Add to Master"):
             if new_master_item:
                 db.table("master_list").upsert({"name": new_master_item}).execute()
                 st.success("Added!")
@@ -56,56 +74,46 @@ if choice == "📦 Inventory Manager":
 
     try:
         master_res = db.table("master_list").select("*").execute()
-        master_options = sorted([item['name'] for item in master_res.data]) if master_res.data else ["Potato (Aloo)"]
+        master_options = sorted([item['name'] for item in master_res.data]) if master_res.data else ["Potato"]
     except:
-        master_options = ["Potato (Aloo)", "Onion (Pyaz)"]
+        master_options = ["Potato"]
 
-    st.subheader("➕ Update Shop Stock")
     with st.form("add_form", clear_on_submit=True):
+        st.subheader("Update Stock")
         p_name = st.selectbox("Product", master_options)
-        c_price = st.number_input("Cost Price/kg", min_value=0.0)
-        s_price = st.number_input("Sale Price/kg", min_value=0.0)
+        c_price = st.number_input("Cost/kg", min_value=0.0)
+        s_price = st.number_input("Sale/kg", min_value=0.0)
         is_flash = st.checkbox("Flash Sale?")
         if st.form_submit_button("Update Inventory"):
-            db.table("inventory").upsert({
-                "name": p_name, "cost_price": c_price, 
-                "sale_price": s_price, "is_flash_sale": is_flash
-            }).execute()
-            st.rerun()
+            db.table("inventory").upsert({"name": p_name, "cost_price": c_price, "sale_price": s_price, "is_flash_sale": is_flash}).execute()
+            st.success("Updated!")
 
     res = db.table("inventory").select("*").execute()
     if res.data:
-        st.subheader("📋 Price List")
-        st.data_editor(pd.DataFrame(res.data), num_rows="dynamic", key="inv_edit", hide_index=True)
+        st.dataframe(pd.DataFrame(res.data), hide_index=True)
 
 # --- SECTION 2: MARKETING ---
 elif choice == "📢 Marketing":
-    st.header("📢 WhatsApp Marketing")
+    st.header("📢 Marketing")
     res = db.table("inventory").select("*").execute()
     if res.data:
         df = pd.DataFrame(res.data)
+        m_type = st.radio("Message Type", ["Daily List", "Flash Sale"], horizontal=True)
         
-        # Replaced Tabs with a Selectbox for better mobile visibility
-        marketing_type = st.radio("Choose Message Type", ["Daily Price List", "Flash Sale Blast"], horizontal=True)
-        
-        if marketing_type == "Daily Price List":
-            st.write("Send full price list to group.")
-            if st.button("Generate Daily List"):
-                msg = f"*🏪 Apni Dukan - Fresh Arrivals*\n\n"
+        if m_type == "Daily List":
+            if st.button("Generate Daily Price List"):
+                msg = f"*🏪 Apni Dukan - Fresh Arrivals*\n"
                 for _, row in df.sort_values("name").iterrows():
                     msg += f"• {row['name']}: *₹{row['sale_price']}*\n"
                 st.link_button("🚀 Share to Group", f"https://wa.me/?text={urllib.parse.quote(msg)}")
-        
         else:
             flash_df = df[df["is_flash_sale"] == True]
             if not flash_df.empty:
                 if st.button("Generate Flash Blast"):
-                    msg = "⚡ *FLASH SALE* ⚡\n\n"
+                    msg = "⚡ *FLASH SALE* ⚡\n"
                     for _, row in flash_df.iterrows():
                         msg += f"🔥 *{row['name']}* @ *₹{row['sale_price']}*!\n"
                     st.link_button("🚀 Send Flash Blast", f"https://wa.me/?text={urllib.parse.quote(msg)}")
-            else:
-                st.info("No items marked for Flash Sale.")
 
 # --- SECTION 3: BILLING ---
 elif choice == "📝 Billing":
@@ -114,7 +122,6 @@ elif choice == "📝 Billing":
     if res.data:
         df_inv = pd.DataFrame(res.data)
         with st.form("bill_form", clear_on_submit=True):
-            # Form layout stack for mobile
             c_name = st.text_input("Customer Name")
             tower = st.selectbox("Tower", TOWERS)
             flat = st.selectbox("Flat", FLATS)
@@ -128,18 +135,14 @@ elif choice == "📝 Billing":
                 total = round(item_row["sale_price"] * calc_qty, 2)
                 profit = round((item_row["sale_price"] - item_row["cost_price"]) * calc_qty, 2)
                 
-                db.table("sales").insert({
-                    "item_name": item, "qty": f"{qty} {unit}", 
-                    "total_bill": total, "profit": profit, 
-                    "tower_flat": f"T-{tower} {flat}"
-                }).execute()
+                db.table("sales").insert({"item_name": item, "qty": f"{qty} {unit}", "total_bill": total, "profit": profit, "tower_flat": f"T-{tower} {flat}"}).execute()
                 
                 msg = f"*Apni Dukan Receipt*\n*Cust:* {c_name}\n*Loc:* T-{tower} {flat}\n*Item:* {item}\n*Qty:* {qty}{unit}\n*Total: ₹{total}*"
                 st.link_button("📲 Share Bill", f"https://wa.me/?text={urllib.parse.quote(msg)}")
 
 # --- SECTION 4: REPORTS ---
 elif choice == "📊 Daily Reports":
-    st.header("📊 Business Insights")
+    st.header("📊 Daily Reports")
     res = db.table("sales").select("*").execute()
     if res.data:
         sdf = pd.DataFrame(res.data)
