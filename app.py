@@ -5,11 +5,12 @@ import pandas as pd
 from datetime import datetime
 
 # --- 1. CONFIG & THEME ---
+# Changed initial_sidebar_state to "auto" so it collapses on mobile after use
 st.set_page_config(
     page_title="Apni Dukan Manager", 
     page_icon="🌿", 
     layout="wide", 
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto" 
 )
 
 st.markdown("""
@@ -17,8 +18,13 @@ st.markdown("""
     .stApp { background-color: #f9fbf9; }
     [data-testid="stSidebar"] { background-color: #2e5a27 !important; }
     [data-testid="stSidebar"] * { color: white !important; }
-    h1, h2, h3 { color: #2e5a27 !important; }
-    .stButton>button { background-color: #e67e22 !important; color: white !important; border-radius: 8px; }
+    h1, h2, h3 { color: #2e5a27 !important; font-size: 1.5rem !important; }
+    .stButton>button { background-color: #e67e22 !important; color: white !important; border-radius: 8px; width: 100%; }
+    /* Fix for mobile labels */
+    .stSelectbox label, .stTextInput label, .stNumberInput label {
+        font-weight: bold !important;
+        color: #2e5a27 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -38,14 +44,14 @@ choice = st.sidebar.radio("Main Menu", menu)
 
 # --- SECTION 1: INVENTORY MANAGER ---
 if choice == "📦 Inventory Manager":
-    st.header("📦 Inventory & Price Management")
+    st.header("📦 Inventory Management")
     
-    with st.expander("⚙️ Master List Settings (Add items to dropdown)"):
+    with st.expander("⚙️ Add New Item to Master Dropdown"):
         new_master_item = st.text_input("New Item Name")
         if st.button("Add to Master List"):
             if new_master_item:
                 db.table("master_list").upsert({"name": new_master_item}).execute()
-                st.success(f"{new_master_item} added!")
+                st.success("Added!")
                 st.rerun()
 
     try:
@@ -54,24 +60,22 @@ if choice == "📦 Inventory Manager":
     except:
         master_options = ["Potato (Aloo)", "Onion (Pyaz)"]
 
-    with st.container(border=True):
-        st.subheader("➕ Update Shop Stock")
-        with st.form("add_form", clear_on_submit=True):
-            c1, c2, c3 = st.columns(3)
-            p_name = c1.selectbox("Product", master_options)
-            c_price = c2.number_input("Cost Price/kg", min_value=0.0)
-            s_price = c3.number_input("Sale Price/kg", min_value=0.0)
-            is_flash = st.checkbox("Flash Sale?")
-            if st.form_submit_button("Update Inventory"):
-                db.table("inventory").upsert({
-                    "name": p_name, "cost_price": c_price, 
-                    "sale_price": s_price, "is_flash_sale": is_flash
-                }).execute()
-                st.rerun()
+    st.subheader("➕ Update Shop Stock")
+    with st.form("add_form", clear_on_submit=True):
+        p_name = st.selectbox("Product", master_options)
+        c_price = st.number_input("Cost Price/kg", min_value=0.0)
+        s_price = st.number_input("Sale Price/kg", min_value=0.0)
+        is_flash = st.checkbox("Flash Sale?")
+        if st.form_submit_button("Update Inventory"):
+            db.table("inventory").upsert({
+                "name": p_name, "cost_price": c_price, 
+                "sale_price": s_price, "is_flash_sale": is_flash
+            }).execute()
+            st.rerun()
 
     res = db.table("inventory").select("*").execute()
     if res.data:
-        st.subheader("📋 Current Prices")
+        st.subheader("📋 Price List")
         st.data_editor(pd.DataFrame(res.data), num_rows="dynamic", key="inv_edit", hide_index=True)
 
 # --- SECTION 2: MARKETING ---
@@ -80,20 +84,28 @@ elif choice == "📢 Marketing":
     res = db.table("inventory").select("*").execute()
     if res.data:
         df = pd.DataFrame(res.data)
-        t1, t2 = st.tabs(["Daily List", "Flash Sale"])
-        with t1:
+        
+        # Replaced Tabs with a Selectbox for better mobile visibility
+        marketing_type = st.radio("Choose Message Type", ["Daily Price List", "Flash Sale Blast"], horizontal=True)
+        
+        if marketing_type == "Daily Price List":
+            st.write("Send full price list to group.")
             if st.button("Generate Daily List"):
                 msg = f"*🏪 Apni Dukan - Fresh Arrivals*\n\n"
                 for _, row in df.sort_values("name").iterrows():
                     msg += f"• {row['name']}: *₹{row['sale_price']}*\n"
                 st.link_button("🚀 Share to Group", f"https://wa.me/?text={urllib.parse.quote(msg)}")
-        with t2:
+        
+        else:
             flash_df = df[df["is_flash_sale"] == True]
-            if st.button("Generate Flash Blast") and not flash_df.empty:
-                msg = "⚡ *FLASH SALE* ⚡\n\n"
-                for _, row in flash_df.iterrows():
-                    msg += f"🔥 *{row['name']}* @ *₹{row['sale_price']}*!\n"
-                st.link_button("🚀 Send Flash Blast", f"https://wa.me/?text={urllib.parse.quote(msg)}")
+            if not flash_df.empty:
+                if st.button("Generate Flash Blast"):
+                    msg = "⚡ *FLASH SALE* ⚡\n\n"
+                    for _, row in flash_df.iterrows():
+                        msg += f"🔥 *{row['name']}* @ *₹{row['sale_price']}*!\n"
+                    st.link_button("🚀 Send Flash Blast", f"https://wa.me/?text={urllib.parse.quote(msg)}")
+            else:
+                st.info("No items marked for Flash Sale.")
 
 # --- SECTION 3: BILLING ---
 elif choice == "📝 Billing":
@@ -102,13 +114,13 @@ elif choice == "📝 Billing":
     if res.data:
         df_inv = pd.DataFrame(res.data)
         with st.form("bill_form", clear_on_submit=True):
+            # Form layout stack for mobile
             c_name = st.text_input("Customer Name")
-            c1, c2 = st.columns(2)
-            tower = c1.selectbox("Tower", TOWERS)
-            flat = c1.selectbox("Flat", FLATS)
-            item = c2.selectbox("Item", df_inv["name"].tolist())
-            unit = c2.selectbox("Unit", ["kg", "gms", "Dozen", "Piece"])
-            qty = c2.number_input("Quantity", min_value=0.1)
+            tower = st.selectbox("Tower", TOWERS)
+            flat = st.selectbox("Flat", FLATS)
+            item = st.selectbox("Item", df_inv["name"].tolist())
+            unit = st.selectbox("Unit", ["kg", "gms", "Dozen", "Piece"])
+            qty = st.number_input("Quantity", min_value=0.1)
             
             if st.form_submit_button("Generate Bill"):
                 item_row = df_inv[df_inv["name"] == item].iloc[0]
