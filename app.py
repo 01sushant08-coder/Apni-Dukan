@@ -12,40 +12,51 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
+# --- 2. CSS FOR VISIBILITY ---
+# We are forcing labels to be dark and bold so they are always visible
 st.markdown("""
     <style>
-    .stApp { background-color: #f9fbf9; }
+    .stApp { background-color: #ffffff; }
+    
+    /* Force all labels to be Black and Bold */
+    label, .stMarkdown, p, .stSelectbox p, .stTextInput p {
+        color: #000000 !important;
+        font-weight: 700 !important;
+        font-size: 1.1rem !important;
+        opacity: 1 !important;
+    }
+    
+    /* Sidebar Styling */
     [data-testid="stSidebar"] { background-color: #2e5a27 !important; }
-    .main-btn {
+    [data-testid="stSidebar"] * { color: white !important; }
+    
+    /* Header Styling */
+    h1, h2, h3 { color: #2e5a27 !important; text-align: center; }
+    
+    /* Button Styling */
+    .stButton>button {
         background-color: #e67e22 !important;
         color: white !important;
-        padding: 20px;
-        text-align: center;
-        border-radius: 10px;
-        margin: 10px 0px;
         font-weight: bold;
-        cursor: pointer;
+        border-radius: 10px;
+        padding: 10px;
     }
-    h1, h2 { color: #2e5a27 !important; text-align: center; }
-    /* Force focus to main area */
-    section[data-testid="stSidebar"] { width: 0px; } 
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DB CONNECTION ---
+# --- 3. DB CONNECTION ---
 URL = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
 KEY = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
 db = create_client(URL, KEY)
 
-# --- 3. DATA HELPERS ---
+# --- 4. DATA HELPERS ---
 TOWERS = [chr(i) for i in range(ord('A'), ord('M'))]
 FLATS = [f"{floor}{flat:02d}" for floor in range(1, 19) for flat in range(1, 5)]
 
-# --- 4. NAVIGATION LOGIC ---
+# --- 5. NAVIGATION ---
 if 'page' not in st.session_state:
     st.session_state.page = "🏠 Home"
 
-# Persistent Home Button in Sidebar
 if st.sidebar.button("🏠 Back to Home"):
     st.session_state.page = "🏠 Home"
     st.rerun()
@@ -53,65 +64,59 @@ if st.sidebar.button("🏠 Back to Home"):
 # --- SECTION: HOME DASHBOARD ---
 if st.session_state.page == "🏠 Home":
     st.title("🌿 Apni Dukan")
-    st.subheader("Select a Task")
+    st.subheader("What would you like to do?")
     
-    col1, col2 = st.columns(2)
-    
-    if col1.button("📦 Inventory Manager", use_container_width=True):
-        st.session_state.page = "📦 Inventory Manager"
-        st.rerun()
+    if st.button("📦 Inventory Manager", use_container_width=True):
+        st.session_state.page = "📦 Inventory Manager"; st.rerun()
         
-    if col2.button("📢 Marketing", use_container_width=True):
-        st.session_state.page = "📢 Marketing"
-        st.rerun()
+    if st.button("📢 Marketing", use_container_width=True):
+        st.session_state.page = "📢 Marketing"; st.rerun()
         
-    if col1.button("📝 Billing", use_container_width=True):
-        st.session_state.page = "📝 Billing"
-        st.rerun()
+    if st.button("📝 Billing", use_container_width=True):
+        st.session_state.page = "📝 Billing"; st.rerun()
         
-    if col2.button("📊 Daily Reports", use_container_width=True):
-        st.session_state.page = "📊 Daily Reports"
-        st.rerun()
+    if st.button("📊 Daily Reports", use_container_width=True):
+        st.session_state.page = "📊 Daily Reports"; st.rerun()
 
-# --- SECTION 1: INVENTORY MANAGER ---
+# --- SECTION: INVENTORY ---
 elif st.session_state.page == "📦 Inventory Manager":
     st.header("📦 Inventory Manager")
-    if st.button("⬅️ Back"): st.session_state.page = "🏠 Home"; st.rerun()
+    if st.button("⬅️ Back to Menu"): st.session_state.page = "🏠 Home"; st.rerun()
     
-    with st.expander("⚙️ Master List Settings"):
-        new_master_item = st.text_input("New Item Name")
-        if st.button("Add to Master"):
-            if new_master_item:
-                db.table("master_list").upsert({"name": new_master_item}).execute()
-                st.success("Added!")
+    with st.expander("⚙️ Add New Item to Master List"):
+        new_item = st.text_input("New Item Name (e.g. Avocado)")
+        if st.button("Add Now"):
+            if new_item:
+                db.table("master_list").upsert({"name": new_item}).execute()
+                st.success(f"{new_item} added!")
                 st.rerun()
 
     try:
-        master_res = db.table("master_list").select("*").execute()
-        master_options = sorted([item['name'] for item in master_res.data]) if master_res.data else ["Potato"]
-    except:
-        master_options = ["Potato"]
+        m_res = db.table("master_list").select("*").execute()
+        m_opts = sorted([i['name'] for i in m_res.data]) if m_res.data else ["Potato"]
+    except: m_opts = ["Potato"]
 
-    with st.form("add_form", clear_on_submit=True):
-        p_name = st.selectbox("Product", master_options)
-        c_price = st.number_input("Cost/kg", min_value=0.0)
-        s_price = st.number_input("Sale/kg", min_value=0.0)
-        is_flash = st.checkbox("Flash Sale?")
+    with st.form("inv_form", clear_on_submit=True):
+        st.write("### Update Current Stock")
+        p_name = st.selectbox("Select Product", m_opts)
+        c_p = st.number_input("Cost Price (Buy)", min_value=0.0)
+        s_p = st.number_input("Sale Price (Sell)", min_value=0.0)
+        flash = st.checkbox("Include in Flash Sale?")
         if st.form_submit_button("Update Inventory"):
-            db.table("inventory").upsert({"name": p_name, "cost_price": c_price, "sale_price": s_price, "is_flash_sale": is_flash}).execute()
+            db.table("inventory").upsert({"name": p_name, "cost_price": c_p, "sale_price": s_p, "is_flash_sale": flash}).execute()
             st.success("Updated!")
 
-# --- SECTION 2: MARKETING ---
+# --- SECTION: MARKETING ---
 elif st.session_state.page == "📢 Marketing":
-    st.header("📢 Marketing")
-    if st.button("⬅️ Back"): st.session_state.page = "🏠 Home"; st.rerun()
+    st.header("📢 WhatsApp Marketing")
+    if st.button("⬅️ Back to Menu"): st.session_state.page = "🏠 Home"; st.rerun()
     
     res = db.table("inventory").select("*").execute()
     if res.data:
         df = pd.DataFrame(res.data)
-        m_type = st.radio("Message Type", ["Daily List", "Flash Sale"], horizontal=True)
+        msg_type = st.radio("Choose Message Type:", ["Daily Price List", "Flash Sale"], horizontal=True)
         
-        if m_type == "Daily List":
+        if msg_type == "Daily Price List":
             if st.button("Generate Daily Price List"):
                 msg = f"*🏪 Apni Dukan - Fresh Arrivals*\n"
                 for _, row in df.sort_values("name").iterrows():
@@ -125,42 +130,32 @@ elif st.session_state.page == "📢 Marketing":
                     for _, row in flash_df.iterrows():
                         msg += f"🔥 *{row['name']}* @ *₹{row['sale_price']}*!\n"
                     st.link_button("🚀 Send Flash Blast", f"https://wa.me/?text={urllib.parse.quote(msg)}")
+            else:
+                st.info("No items marked for Flash Sale.")
 
-# --- SECTION 3: BILLING ---
+# --- SECTION: BILLING ---
 elif st.session_state.page == "📝 Billing":
-    st.header("📝 New Bill")
-    if st.button("⬅️ Back"): st.session_state.page = "🏠 Home"; st.rerun()
+    st.header("📝 Create New Bill")
+    if st.button("⬅️ Back to Menu"): st.session_state.page = "🏠 Home"; st.rerun()
     
     res = db.table("inventory").select("*").execute()
     if res.data:
         df_inv = pd.DataFrame(res.data)
         with st.form("bill_form", clear_on_submit=True):
-            c_name = st.text_input("Customer Name")
-            tower = st.selectbox("Tower", TOWERS)
-            flat = st.selectbox("Flat", FLATS)
-            item = st.selectbox("Item", df_inv["name"].tolist())
-            unit = st.selectbox("Unit", ["kg", "gms", "Dozen", "Piece"])
-            qty = st.number_input("Quantity", min_value=0.1)
+            name = st.text_input("Step 1: Customer Name")
+            tow = st.selectbox("Step 2: Select Tower", TOWERS)
+            flt = st.selectbox("Step 3: Select Flat", FLATS)
+            itm = st.selectbox("Step 4: Select Item", df_inv["name"].tolist())
+            unt = st.selectbox("Step 5: Select Unit", ["kg", "gms", "Dozen", "Piece"])
+            qty = st.number_input("Step 6: Enter Quantity", min_value=0.1)
             
-            if st.form_submit_button("Generate Bill"):
-                item_row = df_inv[df_inv["name"] == item].iloc[0]
-                calc_qty = qty/1000 if unit == "gms" else qty
-                total = round(item_row["sale_price"] * calc_qty, 2)
-                profit = round((item_row["sale_price"] - item_row["cost_price"]) * calc_qty, 2)
+            if st.form_submit_button("Finalize & Generate Bill"):
+                row = df_inv[df_inv["name"] == itm].iloc[0]
+                c_qty = qty/1000 if unt == "gms" else qty
+                tot = round(row["sale_price"] * c_qty, 2)
+                prof = round((row["sale_price"] - row["cost_price"]) * c_qty, 2)
                 
-                db.table("sales").insert({"item_name": item, "qty": f"{qty} {unit}", "total_bill": total, "profit": profit, "tower_flat": f"T-{tower} {flat}"}).execute()
+                db.table("sales").insert({"item_name": itm, "qty": f"{qty} {unt}", "total_bill": tot, "profit": prof, "tower_flat": f"T-{tow} {flt}"}).execute()
                 
-                msg = f"*Apni Dukan Receipt*\n*Cust:* {c_name}\n*Loc:* T-{tower} {flat}\n*Item:* {item}\n*Qty:* {qty}{unit}\n*Total: ₹{total}*"
-                st.link_button("📲 Share Bill", f"https://wa.me/?text={urllib.parse.quote(msg)}")
-
-# --- SECTION 4: REPORTS ---
-elif st.session_state.page == "📊 Daily Reports":
-    st.header("📊 Daily Reports")
-    if st.button("⬅️ Back"): st.session_state.page = "🏠 Home"; st.rerun()
-    
-    res = db.table("sales").select("*").execute()
-    if res.data:
-        sdf = pd.DataFrame(res.data)
-        st.metric("Total Revenue", f"₹{sdf['total_bill'].sum():.2f}")
-        st.metric("Total Profit", f"₹{sdf['profit'].sum():.2f}")
-        st.dataframe(sdf, use_container_width=True)
+                msg = f"*Apni Dukan Receipt*\n*Cust:* {name}\n*Loc:* T-{tow} {flt}\n*Item:* {itm}\n*Qty:* {qty}{unt}\n*Total: ₹{tot}*"
+                st.link_button("📲 Click to Send WhatsApp", f"https://wa.me/?text={urllib.parse.quote(msg)}")
