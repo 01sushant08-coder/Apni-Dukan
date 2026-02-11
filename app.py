@@ -110,3 +110,27 @@ elif choice == "Daily Reports":
         sdf = pd.DataFrame(sales.data)
         st.metric("Total Profit", f"₹{sdf['profit'].sum()}")
         st.dataframe(sdf[["created_at", "item_name", "total_bill", "tower_flat"]], use_container_width=True)
+# --- Updated Billing Save Logic ---
+if st.form_submit_button("Share Bill"):
+    try:
+        item_row = df_inv[df_inv["name"] == item_choice].iloc[0]
+        total = item_row["sale_price"] * qty
+        profit = (item_row["sale_price"] - item_row["cost_price"]) * qty
+        
+        # This is the part that was failing
+        db.table("sales").insert({
+            "item_name": item_choice, 
+            "qty": qty, 
+            "total_bill": total, 
+            "profit": profit, 
+            "tower_flat": flat
+        }).execute()
+        
+        # If successful, show WhatsApp link
+        msg = f"*Apni Dukan Receipt*\nItem: {item_choice}\nQty: {qty}\nTotal: ₹{total}"
+        st.success(f"Bill for {item_choice} saved!")
+        st.link_button("📲 Send WhatsApp", f"https://wa.me/?text={urllib.parse.quote(msg)}")
+        
+    except Exception as e:
+        st.error("Could not save sale. Please ensure your Supabase tables are set up correctly.")
+        st.info("Check the SQL Editor script provided in the instructions.")
